@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Local build for this machine. Upstream's iHUD/iHUD.csproj needs the BepInEx NuGet feed and a
+    D:\ game path; this one compiles the same iHUD/iHUD.cs against the r2modman profile's
+    BepInEx/Harmony and the live game DLLs, then copies the DLL into the profile while
+    "MMaxG-iHUD" is switched on in r2modman. Close the game first (it locks the DLL).
+      dotnet build -c Release local/iHUD.local.csproj
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>iHUD</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Game DLLs and netstandard2.1 disagree on System.IO.Compression/Net.Http versions; harmless. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+    <ValheimPath Condition="'$(ValheimPath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimPath>
+    <ProfilePath Condition="'$(ProfilePath)' == ''">$(USERPROFILE)\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\Ashlands Reborn</ProfilePath>
+    <BepInExCore>$(ProfilePath)\BepInEx\core</BepInExCore>
+    <ModFullName>MMaxG-iHUD</ModFullName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\iHUD\iHUD.cs" />
+    <Reference Include="$(BepInExCore)\BepInEx.dll" Private="false" />
+    <Reference Include="$(BepInExCore)\0Harmony.dll" Private="false" />
+    <Reference Include="$(ValheimPath)\valheim_Data\Managed\UnityEngine*.dll" Private="false" />
+    <Reference Include="$(ValheimPath)\valheim_Data\Managed\assembly_valheim.dll" Private="false" />
+    <Reference Include="$(ValheimPath)\valheim_Data\Managed\assembly_utils.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="CopyToProfile" AfterTargets="Build">
+    <PropertyGroup>
+      <ModsYml>$(ProfilePath)\mods.yml</ModsYml>
+      <DeployDir>$(ProfilePath)\BepInEx\plugins\$(ModFullName)\iHUD</DeployDir>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -Command &quot;$enabled=$null; if(Test-Path '$(ModsYml)'){$in=$false; foreach($l in Get-Content '$(ModsYml)'){if($l -match 'name:\s*$(ModFullName)\s*$'){$in=$true} elseif($in -and $l -match 'enabled:\s*(true|false)'){$enabled=($Matches[1] -eq 'true'); break} elseif($in -and $l -match '^-\s'){break}}}; if($enabled -eq $true){try{Copy-Item '$(OutputPath)$(AssemblyName).dll' '$(DeployDir)\' -Force -ErrorAction Stop; Write-Host 'Deployed $(AssemblyName).dll'}catch{Write-Host 'Deploy FAILED: the DLL is locked (is the game running?)'; exit 1}} elseif($enabled -eq $false){Write-Host 'Deploy skipped: iHUD is switched off in r2modman'} else {Write-Host 'Deploy skipped: iHUD not in the r2modman profile'}&quot;" />
+  </Target>
+</Project>
