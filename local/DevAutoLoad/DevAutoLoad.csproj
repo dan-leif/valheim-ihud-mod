@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Test-only menu-skip plugin. Built and installed by local/dev-test.ps1; not part of iHUD. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>iHUD.DevAutoLoad</AssemblyName>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+    <ValheimPath Condition="'$(ValheimPath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimPath>
+    <ProfilePath Condition="'$(ProfilePath)' == ''">$(USERPROFILE)\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\Ashlands Reborn</ProfilePath>
+    <BepInExCore>$(ProfilePath)\BepInEx\core</BepInExCore>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(BepInExCore)\BepInEx.dll" Private="false" />
+    <Reference Include="$(BepInExCore)\0Harmony.dll" Private="false" />
+    <Reference Include="$(ValheimPath)\valheim_Data\Managed\UnityEngine*.dll" Private="false" />
+    <Reference Include="$(ValheimPath)\valheim_Data\Managed\assembly_valheim.dll" Private="false" />
+    <Reference Include="$(ValheimPath)\valheim_Data\Managed\assembly_utils.dll" Private="false" />
+  </ItemGroup>
+</Project>

@@ -52,6 +52,15 @@ its remaining time goes UP (a refresh).
 - Verified on Valheim 1.0.20 / BepInExPack 5.4.2351 (upstream tested 1.0.15). Neither of the
   user's other mods (Ashlands Reborn, Runestone Compass) touches the HUD, so there's no overlap.
 
+## Quick in-game test (skips the menus)
+
+`powershell -ExecutionPolicy Bypass -File local\dev-test.ps1` builds and installs iHUD, installs a
+test-only plugin (`local/DevAutoLoad`, copied from Ashlands Reborn's DevAutoLoad), arms a one-shot
+flag file, and launches through Steam straight into Dove / Reborn (log line "Selecting world"
+appears ~10-20 s after launch). **When done testing, close the game and run it with `-Cleanup`**:
+the user wants the menu skip gone from the profile afterwards. Ashlands Reborn's own autoload
+only works while that mod is switched on in r2modman, so don't rely on it.
+
 ## Launching Valheim (shared with the user's other mods)
 
 - `<game>\BepInEx` is a directory junction into the r2modman profile (created by

@@ -91,6 +91,9 @@ public sealed class iHUDPlugin : BaseUnityPlugin
     // ---------------------------------------------------------------------
 
     internal static ConfigEntry<bool> StatusEffectMoveBesideInventory = null!;
+    internal static ConfigEntry<float> StatusEffectInventoryGap = null!;
+    internal static ConfigEntry<bool> StatusEffectAlwaysUseInventoryPosition = null!;
+    internal static ConfigEntry<float> StatusEffectClosedNudge = null!;
     internal static ConfigEntry<float> StatusEffectHideDelay = null!;
     internal static ConfigEntry<float> StatusEffectFadeDuration = null!;
     internal static ConfigEntry<float> StatusEffectCriticalTime = null!;
@@ -482,6 +485,35 @@ public sealed class iHUDPlugin : BaseUnityPlugin
             true,
             "While the inventory is open, move the status effect icons to " +
             "the left of the panels on the right so they stay visible.");
+
+        StatusEffectInventoryGap = Config.Bind(
+            "Status Effects",
+            "Inventory Gap",
+            24f,
+            new ConfigDescription(
+                "With 'Move Beside Inventory' on: space between the status " +
+                "effect icons and the panels on the right. Higher moves the " +
+                "icons further left.",
+                new AcceptableValueRange<float>(0f, 600f)));
+
+        StatusEffectAlwaysUseInventoryPosition = Config.Bind(
+            "Status Effects",
+            "Always Use Inventory Position",
+            false,
+            "Keep the status effect icons where they sit with the inventory " +
+            "open (left of the right-hand panels, see 'Inventory Gap') all " +
+            "the time, so they don't jump when the inventory opens. Works " +
+            "even with 'Move Beside Inventory' off.");
+
+        StatusEffectClosedNudge = Config.Bind(
+            "Status Effects",
+            "Closed Inventory Nudge",
+            0f,
+            new ConfigDescription(
+                "With 'Always Use Inventory Position' on: extra sideways shift " +
+                "while the inventory is closed, to line the icons up with " +
+                "where they sit when it is open. Negative moves left.",
+                new AcceptableValueRange<float>(-1500f, 1500f)));
 
         StatusEffectHideDelay = Config.Bind(
             "Status Effects",
@@ -2012,12 +2044,22 @@ internal static class StatusEffectController
     // Inventory layout: the icons sit top right, where the inventory's
     // right-hand panels (character info, crafting) cover them. While the
     // inventory is open, slide the icon row left so its right edge sits
-    // just left of those panels, at the same height.
+    // just left of those panels, at the same height. With 'Always Use
+    // Inventory Position' the icons stay in that spot all the time.
+    //
+    // The inventory opens with an animation, so where the panels are
+    // while it is closed or opening is not reliable. Once it has been
+    // open a moment we remember the panels' left edge, measured from the
+    // right of the screen in canvas units, and use that from then on.
     // -----------------------------------------------------------------
 
-    private const float InventoryGap = 24f; // canvas units
+    private const float SettleSeconds = 0.5f;
 
     private static Vector3? originalRootPosition;
+
+    private static float? panelOffsetFromRight;
+
+    private static float inventoryOpenSince = -1f;
 
     private static readonly Vector3[] corners = new Vector3[4];
 
@@ -2028,12 +2070,42 @@ internal static class StatusEffectController
         if (root == null)
             return;
 
-        bool move =
-            iHUDPlugin.StatusEffectMoveBesideInventory.Value &&
-            InventoryGui.instance != null &&
-            InventoryGui.IsVisible();
+        bool hasGui = InventoryGui.instance != null;
+        bool open = hasGui && InventoryGui.IsVisible();
+        float scale = root.lossyScale.x;
+        float screenRight = ScreenRight(root);
 
-        float panelLeft = move ? RightPanelsLeftEdge() : float.NaN;
+        if (!open)
+        {
+            inventoryOpenSince = -1f;
+        }
+        else
+        {
+            if (inventoryOpenSince < 0f)
+                inventoryOpenSince = Time.unscaledTime;
+
+            if (Time.unscaledTime - inventoryOpenSince >= SettleSeconds)
+            {
+                float live = RightPanelsLeftEdge(requireActive: true);
+
+                if (!float.IsNaN(live) && scale > 0f)
+                    panelOffsetFromRight = (screenRight - live) / scale;
+            }
+        }
+
+        bool move =
+            hasGui &&
+            (iHUDPlugin.StatusEffectAlwaysUseInventoryPosition.Value ||
+             (iHUDPlugin.StatusEffectMoveBesideInventory.Value && open));
+
+        float panelLeft = float.NaN;
+
+        if (move)
+        {
+            panelLeft = panelOffsetFromRight.HasValue
+                ? screenRight - panelOffsetFromRight.Value * scale
+                : RightPanelsLeftEdge(requireActive: open);
+        }
 
         if (!move || float.IsNaN(panelLeft))
         {
@@ -2073,28 +2145,65 @@ internal static class StatusEffectController
         if (float.IsNegativeInfinity(iconsRight))
             return;
 
-        float gap = InventoryGap * root.lossyScale.x;
-        float shift = panelLeft - gap - iconsRight;
+        float gap =
+            iHUDPlugin.StatusEffectInventoryGap.Value * scale;
 
         // Only ever move left (never onto the panels on a wide screen).
-        if (shift >= 0f)
-            return;
+        float shift = Mathf.Min(0f, panelLeft - gap - iconsRight);
+
+        // Manual fine-tuning while the inventory is closed.
+        if (!open)
+            shift += iHUDPlugin.StatusEffectClosedNudge.Value * scale;
+
+        if (open != lastLoggedOpen)
+        {
+            lastLoggedOpen = open;
+            iHUDPlugin.Log.LogInfo(
+                $"Status icons {(open ? "inventory open" : "inventory closed")}: " +
+                $"panelLeft={panelLeft:F0} cached={panelOffsetFromRight.HasValue} " +
+                $"iconsRight={iconsRight:F0} shift={shift:F0} scale={scale:F2}");
+        }
 
         Vector3 position = root.position;
         position.x += shift;
         root.position = position;
     }
 
-    // Left edge (world x) of the inventory's visible right-hand panels,
-    // or NaN when none is showing.
-    private static float RightPanelsLeftEdge()
+    private static bool? lastLoggedOpen;
+
+    // Right edge (world x) of the canvas the icons are drawn on.
+    private static float ScreenRight(RectTransform root)
+    {
+        Canvas? canvas = root.GetComponentInParent<Canvas>();
+
+        if (canvas != null &&
+            canvas.rootCanvas.transform is RectTransform canvasRect)
+        {
+            canvasRect.GetWorldCorners(corners);
+            return corners[2].x;
+        }
+
+        return Screen.width;
+    }
+
+    // Left edge (world x) of the inventory's right-hand panels, or NaN
+    // when none is found. With requireActive false, panels hidden along
+    // with the closed inventory still count (only their own on/off matters).
+    private static float RightPanelsLeftEdge(bool requireActive)
     {
         InventoryGui gui = InventoryGui.instance;
         float left = float.PositiveInfinity;
 
         foreach (RectTransform? panel in new[] { gui.m_info, gui.m_crafting })
         {
-            if (panel == null || !panel.gameObject.activeInHierarchy)
+            if (panel == null)
+                continue;
+
+            bool active = requireActive
+                ? panel.gameObject.activeInHierarchy
+                : panel.gameObject.activeSelf;
+
+            if (!active)
                 continue;
 
             panel.GetWorldCorners(corners);
