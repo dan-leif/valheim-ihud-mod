@@ -90,6 +90,7 @@ public sealed class iHUDPlugin : BaseUnityPlugin
     // Status effects
     // ---------------------------------------------------------------------
 
+    internal static ConfigEntry<bool> StatusEffectMoveBesideInventory = null!;
     internal static ConfigEntry<float> StatusEffectHideDelay = null!;
     internal static ConfigEntry<float> StatusEffectFadeDuration = null!;
     internal static ConfigEntry<float> StatusEffectCriticalTime = null!;
@@ -474,6 +475,13 @@ public sealed class iHUDPlugin : BaseUnityPlugin
         // -----------------------------------------------------------------
         // Status effects
         // -----------------------------------------------------------------
+
+        StatusEffectMoveBesideInventory = Config.Bind(
+            "Status Effects",
+            "Move Beside Inventory",
+            true,
+            "While the inventory is open, move the status effect icons to " +
+            "the left of the panels on the right so they stay visible.");
 
         StatusEffectHideDelay = Config.Bind(
             "Status Effects",
@@ -1898,6 +1906,8 @@ internal static class StatusEffectController
         if (Player.m_localPlayer == null)
             return;
 
+        UpdateInventoryPosition(__instance);
+
         if (!iHUDPlugin.StatusEffectHandling.Value)
         {
             RestoreDefault();
@@ -1996,6 +2006,102 @@ internal static class StatusEffectController
 
             group.alpha = enabled ? alpha : 1f;
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Inventory layout: the icons sit top right, where the inventory's
+    // right-hand panels (character info, crafting) cover them. While the
+    // inventory is open, slide the icon row left so its right edge sits
+    // just left of those panels, at the same height.
+    // -----------------------------------------------------------------
+
+    private const float InventoryGap = 24f; // canvas units
+
+    private static Vector3? originalRootPosition;
+
+    private static readonly Vector3[] corners = new Vector3[4];
+
+    private static void UpdateInventoryPosition(Hud hud)
+    {
+        RectTransform root = hud.m_statusEffectListRoot;
+
+        if (root == null)
+            return;
+
+        bool move =
+            iHUDPlugin.StatusEffectMoveBesideInventory.Value &&
+            InventoryGui.instance != null &&
+            InventoryGui.IsVisible();
+
+        float panelLeft = move ? RightPanelsLeftEdge() : float.NaN;
+
+        if (!move || float.IsNaN(panelLeft))
+        {
+            if (originalRootPosition.HasValue)
+            {
+                root.localPosition = originalRootPosition.Value;
+                originalRootPosition = null;
+            }
+
+            return;
+        }
+
+        if (!originalRootPosition.HasValue)
+            originalRootPosition = root.localPosition;
+
+        // Measure from the original spot so the result is the same every
+        // frame.
+        root.localPosition = originalRootPosition.Value;
+
+        float iconsRight = float.NegativeInfinity;
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+
+            if (child == hud.m_statusEffectTemplate ||
+                !child.gameObject.activeSelf ||
+                !(child is RectTransform rect))
+            {
+                continue;
+            }
+
+            rect.GetWorldCorners(corners);
+            iconsRight = Mathf.Max(iconsRight, corners[2].x);
+        }
+
+        if (float.IsNegativeInfinity(iconsRight))
+            return;
+
+        float gap = InventoryGap * root.lossyScale.x;
+        float shift = panelLeft - gap - iconsRight;
+
+        // Only ever move left (never onto the panels on a wide screen).
+        if (shift >= 0f)
+            return;
+
+        Vector3 position = root.position;
+        position.x += shift;
+        root.position = position;
+    }
+
+    // Left edge (world x) of the inventory's visible right-hand panels,
+    // or NaN when none is showing.
+    private static float RightPanelsLeftEdge()
+    {
+        InventoryGui gui = InventoryGui.instance;
+        float left = float.PositiveInfinity;
+
+        foreach (RectTransform? panel in new[] { gui.m_info, gui.m_crafting })
+        {
+            if (panel == null || !panel.gameObject.activeInHierarchy)
+                continue;
+
+            panel.GetWorldCorners(corners);
+            left = Mathf.Min(left, corners[0].x);
+        }
+
+        return float.IsPositiveInfinity(left) ? float.NaN : left;
     }
 
     private static void UpdateComfort()
