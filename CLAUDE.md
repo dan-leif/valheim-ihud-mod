@@ -49,8 +49,8 @@ its remaining time goes UP (a refresh).
   themselves in game (F1); don't change their values.
 - Log: `...\Ashlands Reborn\BepInEx\LogOutput.log` (iHUD logs `[iHUD]` lines; a missing reflection
   target logs a warning).
-- Verified on Valheim 1.0.20 / BepInExPack 5.4.2351 (upstream tested 1.0.15). No overlap with the
-  user's other mods (Ashlands Reborn, Runestone Compass) touch the HUD.
+- Verified on Valheim 1.0.20 / BepInExPack 5.4.2351 (upstream tested 1.0.15). Neither of the
+  user's other mods (Ashlands Reborn, Runestone Compass) touches the HUD, so there's no overlap.
 
 ## Launching Valheim (shared with the user's other mods)
 
